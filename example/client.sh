@@ -1,1 +1,1 @@
-./hello_ll -o debug /tmp/mnt-test-fuse
+./passthrough_ll -o debug -o mode=daemon -o source=/home/tzztzt/Workspace /tmp/mnt-test-fuse
