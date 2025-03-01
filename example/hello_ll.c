@@ -28,6 +28,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <assert.h>
+#include <fuse.h>
 
 static const char *hello_str = "Hello World!\n";
 static const char *hello_name = "hello";
@@ -212,6 +213,55 @@ static const struct fuse_lowlevel_ops hello_ll_oper = {
 	.removexattr = hello_ll_removexattr,
 };
 
+static void *xrealloc(void *oldptr, size_t size)
+{
+	void *ptr = realloc(oldptr, size);
+	if (!ptr) {
+		fprintf(stderr, "failed to allocate memory\n");
+		exit(1);
+	}
+	return ptr;
+}
+
+static char *add_option(const char *opt, char *options)
+{
+	int oldlen = options ? strlen(options) : 0;
+
+	options = xrealloc(options, oldlen + 1 + strlen(opt) + 1);
+	if (!oldlen)
+		strcpy(options, opt);
+	else {
+		strcat(options, ",");
+		strcat(options, opt);
+	}
+	return options;
+}
+
+static int prepare_fuse_fd(const char *mountpoint, const char* subtype,
+			   const char *options)
+{
+	int fuse_fd = -1;
+	int flags = -1;
+	int subtype_len = strlen(subtype) + 9;
+	char* options_copy = xrealloc(NULL, subtype_len);
+
+	snprintf(options_copy, subtype_len, "subtype=%s", subtype);
+	options_copy = add_option(options, options_copy);
+	fuse_fd = fuse_open_channel(mountpoint, options_copy);
+	if (fuse_fd == -1) {
+		exit(1);
+	}
+
+	flags = fcntl(fuse_fd, F_GETFD);
+	if (flags == -1 || fcntl(fuse_fd, F_SETFD, flags & ~FD_CLOEXEC) == 1) {
+		fprintf(stderr, "Failed to clear CLOEXEC: %s\n",
+			strerror(errno));
+		exit(1);
+	}
+
+	return fuse_fd;
+}
+
 int main(int argc, char *argv[])
 {
 	struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
@@ -241,6 +291,18 @@ int main(int argc, char *argv[])
 		ret = 1;
 		goto err_out1;
 	}
+
+	int fuse_fd = -1;
+	char *type = "hell_ll";
+	char *options = "rw,nosuid,nodev,relatime";
+	char *dev_fd_mountpoint;
+	fuse_fd = prepare_fuse_fd(opts.mountpoint, type, options);
+	dev_fd_mountpoint = xrealloc(NULL, 20);
+	snprintf(dev_fd_mountpoint, 20, "/dev/fd/%u", fuse_fd);
+	opts.mountpoint = dev_fd_mountpoint;
+
+	printf("Success: prepare_fuse_fd: fd %u, mount point: %s\n", fuse_fd, opts.mountpoint);
+
 
 	se = fuse_session_new(&args, &hello_ll_oper,
 			      sizeof(hello_ll_oper), NULL);
