@@ -2498,7 +2498,12 @@ void fuse_session_process_buf_int(struct fuse_session *se,
 
 		expected = se->cuse_data ? CUSE_INIT : FUSE_INIT;
 		if (in->opcode != expected)
-			goto reply_err;
+			se->got_init = 1;
+			if (se->op.init)
+				se->op.init(se->userdata, &se->conn);
+			se->conn.proto_major = 7;
+			se->conn.proto_minor = 19;
+			// goto reply_err;
 	} else if (in->opcode == FUSE_INIT || in->opcode == CUSE_INIT)
 		goto reply_err;
 
